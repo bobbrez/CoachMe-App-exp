@@ -6,6 +6,8 @@ import { DetailsScreen } from './Components/DetailsScreen'
 import * as eva from '@eva-design/eva';
 import { ApplicationProvider, IconRegistry } from '@ui-kitten/components';
 import { EvaIconsPack } from '@ui-kitten/eva-icons';
+
+import { SessionProvider } from './Components/Session';
 import { default as theme } from './theme.json';
 
 const { Navigator, Screen } = createStackNavigator();
@@ -24,10 +26,10 @@ export const AppNavigator = () => (
 );
 
 export default () => (
-  <>
+  <SessionProvider>
     <IconRegistry icons={EvaIconsPack}/>
     <ApplicationProvider {...eva} theme={{ ...eva.dark, ...theme }}>
       <AppNavigator />
     </ApplicationProvider>
-  </>
+  </SessionProvider>
 );
