@@ -38,12 +38,14 @@ export const HomeScreen = ({ navigation }) => {
 
   const UnauthenticatedView = () => (
     <View>
+      <Text>{session.errorMessage}</Text>
       <LoadingButton loading={session.isLoading} iconName='log-in-outline' onPress={(logIn)}>Log In</LoadingButton>
     </View>
   )
 
   const AuthenticatedView = () => (
     <View>
+      <Text category='h5'>Hi {session.user.given_name}!</Text>
       <Button onPress={navigateDetails}>Show Details</Button>
       <LoadingButton loading={session.isLoading} iconName='log-out-outline' onPress={logOut}>Log Out</LoadingButton>
     </View>
@@ -54,8 +56,7 @@ export const HomeScreen = ({ navigation }) => {
       <TopNavigation title='MyApp' alignment='center'/>
       <Divider/>
       <Layout style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <Text category='h5'>Token: {session.token}</Text>
-        { session.token ? <AuthenticatedView /> : <UnauthenticatedView /> }
+        { session.user ? <AuthenticatedView /> : <UnauthenticatedView /> }
       </Layout>
     </SafeAreaView>
   );

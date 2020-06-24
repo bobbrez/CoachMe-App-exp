@@ -1,20 +1,22 @@
 import React, { useContext } from 'react';
 import AsyncStorage from '@react-native-community/async-storage';
+import jwtDecode from 'jwt-decode';
+import Auth0 from 'react-native-auth0';
+import Config from "react-native-config";
 
 export const SessionContext = React.createContext({});
 
+const auth0 = new Auth0({
+  domain: Config.AUTH0_DOMAIN, 
+  clientId: Config.AUTH0_CLIENTID,
+});
+
+const scope = 'openid profile email offline_access';
+
 const initialState = {
-  token: null,
+  user: null,
+  errorMessage: null,
   isLoading: true,
-}
-
-function sleep(ms : number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-const submitSigninRequest = async (username : string, password : string) => {
-  await sleep(2000);
-  return 'abcdefg';
 }
 
 const sessionReducer = (state, action) => {
@@ -22,34 +24,57 @@ const sessionReducer = (state, action) => {
     case 'RESTORE_TOKEN':
       return {
         ...state,
-        token: action.payload.token,
+        user: action.payload.user,
         isLoading: false,
       }
 
     case 'LOG_IN_SUBMIT':
       return { 
         ...state,
-        token: null,
+        user: null,
         isLoading: true,
       };
 
     case 'LOG_IN_SUCCESS':
       return { 
         ...state,
-        token: action.payload.token,
+        user: action.payload.user,
         isLoading: false,
       };
+
+    case 'LOG_IN_FAILURE':
+      return {
+        ...state,
+        errorMessage: action.payload.errorMessage,
+        user: null,
+        isLoading: false,
+      }
 
     case 'LOG_OUT':
       return { 
         ...state,
-        token: null,
+        user: null,
         isLoading: false,
       };
+
+    case 'LOG_OUT_FAILURE':
+      return {
+        ...state,
+        errorMessage: action.payload.errorMessage,
+        isLoading: false,
+      }
 
     default:
       throw new Error();
   }
+}
+
+const decodeUserFromSession = (session) => jwtDecode(session.idToken);
+
+const updateStoredSession = async (session) => {
+  const user = jwtDecode(session.idToken);
+  const sessionJson = JSON.stringify(session)
+  await AsyncStorage.setItem('session', sessionJson);
 }
 
 export const SessionProvider = ({ children }) => { 
@@ -60,13 +85,32 @@ export const SessionProvider = ({ children }) => {
       logIn: async (username : string, password : string) => {
         dispatch({ type: 'LOG_IN_SUBMIT' });
 
-        const token = await submitSigninRequest(username, password);
-        await AsyncStorage.setItem('sessionToken', token);
+        try {
+          const session = await auth0.webAuth.authorize({ scope });
+          
+          await updateStoredSession(session);
+          
+          const user = decodeUserFromSession(session);
 
-        dispatch({ type: 'LOG_IN_SUCCESS', payload: { token }});
+          dispatch({ type: 'LOG_IN_SUCCESS', payload: { user }});
+        } catch(e) {
+          // Only ignore user_canceled errors
+          const errorMessage = e.error === 'a0.session.user_cancelled' ? null : e.error_description
+          dispatch({ type: 'LOG_IN_FAILURE', payload: { errorMessage }});
+        }
       },
+
       logOut: async () => {
-        dispatch({ type: 'LOG_OUT'});
+        try {
+          await auth0.webAuth.clearSession({});
+          await AsyncStorage.clear();
+
+          dispatch({ type: 'LOG_OUT'});
+        } catch(e) {
+          // Only ignore user_canceled errors
+          const errorMessage = e.error === 'a0.session.user_cancelled' ? null : e.error_description
+          dispatch({ type: 'LOG_OUT_FAILURE', payload: { errorMessage }});
+        }
       }
     }
 
@@ -75,11 +119,32 @@ export const SessionProvider = ({ children }) => {
 
   React.useEffect(() => {
     const bootstrap = async () => {
-      let token;
+      let user;
 
-      token = await AsyncStorage.getItem('sessionToken');
+      try {
+        const sessionJson = await AsyncStorage.getItem('session');
+        const session = JSON.parse(sessionJson || '{}');
 
-      dispatch({ type: 'RESTORE_TOKEN', payload: { token }})
+        user = decodeUserFromSession(session);
+
+        try {
+          const validUser = await auth0.auth.userInfo({ token: session.accessToken });
+        } catch(e) {
+          if (e.name == 'a0.response.invalid' && e.message === 'invalid_token') {
+            const newSession = await auth0.auth.refreshToken({ refreshToken: session.refreshToken, scope })
+
+            user = await updateStoredSession(newSession);
+          } else {
+            throw e;
+          }
+        }
+
+      } catch(e) {
+        user = null
+        await AsyncStorage.clear();
+      }
+
+      dispatch({ type: 'RESTORE_TOKEN', payload: { user }})
     }
 
     bootstrap();
